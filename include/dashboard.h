@@ -88,8 +88,8 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 <div class="card" id="ctrlModeCard" style="grid-column:span 2">
 <div class="label">Control Mode</div>
 <div class="controls">
-<button id="modePid" class="active-pid">PID</button>
-<button id="modeLinear" class="">Linear</button>
+<button id="modePid" class="mode-btn active-pid">PID</button>
+<button id="modeLinear" class="mode-btn">Linear</button>
 </div>
 </div>
 
@@ -140,7 +140,7 @@ function updateDash(){
     if(d.am!==undefined){
       currentAutoMode=d.am;
       var pidBtn=document.getElementById('modePid'),linBtn=document.getElementById('modeLinear');
-      if(d.am){linBtn.className='active active-linear';pidBtn.className=''}else{pidBtn.className='active active-pid';linBtn.className=''}
+      if(d.am){linBtn.className='mode-btn active active-linear';pidBtn.className='mode-btn'}else{pidBtn.className='mode-btn active active-pid';linBtn.className='mode-btn'}
     }
     if(d.sp!==undefined){
       document.getElementById('setpoint').textContent=d.sp.toFixed(1);

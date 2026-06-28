@@ -18,6 +18,8 @@ DHT dht(DHT_PIN, DHT_TYPE);
 
 enum FanMode { MANUAL, AUTO };
 FanMode fanMode = MANUAL;
+enum AutoMode { PID_MODE, LINEAR_MODE };
+AutoMode autoMode = PID_MODE;
 
 bool lastBtnState = HIGH;
 unsigned long lastDebounceTime = 0;
@@ -204,14 +206,18 @@ void loop() {
 
   if (fanMode == AUTO) {
     if (dhtValid) {
-      pidInput = temp;
-      pid.Compute();
-      if (temp < 20.0) {
-        fanSpeed = 0;
-      } else if (temp > 30.0) {
-        fanSpeed = 255;
+      if (autoMode == LINEAR_MODE) {
+        fanSpeed = constrain(map((int)(temp * 10), 200, 300, 0, 255), 0, 255);
       } else {
-        fanSpeed = constrain((int)pidOutput, 0, 255);
+        pidInput = temp;
+        pid.Compute();
+        if (temp < 20.0) {
+          fanSpeed = 0;
+        } else if (temp > 30.0) {
+          fanSpeed = 255;
+        } else {
+          fanSpeed = constrain((int)pidOutput, 0, 255);
+        }
       }
     } else {
       fanSpeed = 0;
@@ -238,9 +244,10 @@ void loop() {
     currentRPM = (tachPulseCount * 60000) / (TACH_SAMPLE_TIME * 2);
     unsigned long targetRPM = map(speedPercent, 0, 100, 0, 5000);
 
-    Serial.print(fanMode == AUTO ? "[AUTO] " : "[MANUAL] ");
-    Serial.print(fanMode == AUTO ? "Set: " : "Pot: ");
+    Serial.print(fanMode == AUTO ? "[AUTO " : "[MANUAL] ");
     if (fanMode == AUTO) {
+      Serial.print(autoMode == PID_MODE ? "PID] " : "LIN] ");
+      Serial.print("Set: ");
       Serial.print(setpoint, 1);
       Serial.print("C | Temp: ");
       Serial.print(temp, 1);
@@ -345,6 +352,7 @@ String buildStatusJSON() {
   doc["mq"] = mqtt.connected() ? 1 : 0;
   doc["sp"] = setpoint;
   doc["pid"] = (int)pidOutput;
+  doc["am"] = (autoMode == LINEAR_MODE) ? 1 : 0;
 
   String json;
   serializeJson(doc, json);
@@ -400,6 +408,17 @@ void processCommand(const char* json) {
     if (sp >= 20.0 && sp <= 30.0) {
       setpoint = sp;
       Serial.printf("Setpoint changed to %.1fC\n", setpoint);
+    }
+  }
+
+  if (strcmp(cmd, "automode") == 0) {
+    const char* v = doc["v"];
+    if (strcmp(v, "pid") == 0) {
+      autoMode = PID_MODE;
+      Serial.println("Auto mode: PID");
+    } else if (strcmp(v, "linear") == 0) {
+      autoMode = LINEAR_MODE;
+      Serial.println("Auto mode: Linear ramp-up");
     }
   }
 }

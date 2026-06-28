@@ -28,6 +28,10 @@ button:hover{background:#3d404a;border-color:#666}
 button.active{background:#238636;border-color:#2ea043;color:#fff}
 button.active-auto{background:#1f6feb;border-color:#58a6ff;color:#fff}
 button.active-manual{background:#da8a3e;border-color:#f0883e;color:#fff}
+button.active-pid{background:#1f6feb;border-color:#58a6ff;color:#fff}
+button.active-linear{background:#2ea043;border-color:#3fb950;color:#fff}
+#autoModeToggle{display:none}
+#autoModeToggle button{font-size:.8rem;padding:4px 12px}
 input[type=range]{flex:1;min-width:120px;accent-color:#a371f7;height:6px;background:#2d303a;border-radius:3px;-webkit-appearance:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#a371f7;cursor:pointer;border:2px solid #1c1e26}
 input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#a371f7;cursor:pointer;border:2px solid #1c1e26}
@@ -85,8 +89,12 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 <div class="label">Mode</div>
 <div class="controls">
 <button id="modeAuto" class="active-auto">AUTO</button>
-<button id="modeManual" class="active-manual">MANUAL</button>
-</div>
+    <button id="modeManual" class="active-manual">MANUAL</button>
+  </div>
+  <div class="controls" id="autoModeToggle">
+    <button id="modePid" class="active-pid">PID</button>
+    <button id="modeLinear" class="">Linear</button>
+  </div>
 </div>
 
 <div class="card" style="grid-column:1/-1">
@@ -121,6 +129,15 @@ function updateDash(){
       currentMode=d.m;
       var a=document.getElementById('modeAuto'),m=document.getElementById('modeManual');
       if(d.m){a.className='active active-auto';m.className=''}else{a.className='';m.className='active active-manual'}
+      var tog=document.getElementById('autoModeToggle');
+      if(d.m){
+        tog.style.display='flex';
+        var pidBtn=document.getElementById('modePid'),linBtn=document.getElementById('modeLinear');
+        if(d.am!==undefined){
+          if(d.am){linBtn.className='active active-linear';pidBtn.className=''}
+          else{pidBtn.className='active active-pid';linBtn.className=''}
+        }
+      }else{tog.style.display='none'}
     }
     if(d.sp!==undefined){document.getElementById('setpoint').textContent=d.sp.toFixed(1);document.getElementById('spBar').style.width=((d.sp-20)/10*100)+'%'}
     if(d.mq!==undefined)document.getElementById('mqttDot').className=d.mq?'dot on':'dot off';
@@ -146,6 +163,13 @@ document.getElementById('modeAuto').onclick=function(){
 };
 document.getElementById('modeManual').onclick=function(){
   fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:'mode_manual'})});
+};
+
+document.getElementById('modePid').onclick=function(){
+  fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:'automode',v:'pid'})});
+};
+document.getElementById('modeLinear').onclick=function(){
+  fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:'automode',v:'linear'})});
 };
 
 document.getElementById('pwmSlider').oninput=function(){

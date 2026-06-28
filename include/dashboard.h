@@ -11,7 +11,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;background:#0f1117;color:#e1e4e8;padding:20px;min-height:100vh}
 h1{font-size:1.4rem;font-weight:600;margin-bottom:20px;color:#58a6ff}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;max-width:900px;margin:0 auto}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;max-width:900px;margin:0 auto}
 .card{background:#1c1e26;border-radius:12px;padding:20px;border:1px solid #2d303a}
 .card .label{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;margin-bottom:8px}
 .card .value{font-size:2rem;font-weight:700;font-variant-numeric:tabular-nums}
@@ -30,21 +30,23 @@ button.active-auto{background:#1f6feb;border-color:#58a6ff;color:#fff}
 button.active-manual{background:#da8a3e;border-color:#f0883e;color:#fff}
 button.active-pid{background:#1f6feb;border-color:#58a6ff;color:#fff}
 button.active-linear{background:#2ea043;border-color:#3fb950;color:#fff}
-#autoModeToggle{display:none}
-#autoModeToggle button{font-size:.8rem;padding:4px 12px}
+.mode-btn{font-size:1rem;padding:10px 24px}
 input[type=range]{flex:1;min-width:120px;accent-color:#a371f7;height:6px;background:#2d303a;border-radius:3px;-webkit-appearance:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#a371f7;cursor:pointer;border:2px solid #1c1e26}
 input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#a371f7;cursor:pointer;border:2px solid #1c1e26}
 input[type=range]:disabled{opacity:.4}
 input[type=range]:disabled::-webkit-slider-thumb{background:#555;cursor:default}
 input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
+.sp-slider{accent-color:#58a6ff}
+.sp-slider::-webkit-slider-thumb{background:#58a6ff}
+.sp-slider::-moz-range-thumb{background:#58a6ff}
+.greyed{opacity:.4;pointer-events:none}
 .status{display:flex;gap:16px;font-size:.8rem;color:#8b949e;margin-top:16px;justify-content:center}
 .status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
 .status .dot.on{background:#3fb950;box-shadow:0 0 6px #3fb95066}
 .status .dot.off{background:#da3633}
 .slider-value{font-size:.9rem;font-weight:600;color:#a371f7;min-width:36px;text-align:right}
 .setpoint-color{color:#58a6ff}
-.setpoint-bar{background:#58a6ff}
 </style>
 </head>
 <body>
@@ -75,29 +77,33 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 <div class="bar"><div class="bar-fill rpm" id="rpmBar" style="width:0%"></div></div>
 </div>
 
-<div class="card" style="grid-column:1/-1">
+<div class="card" style="grid-column:span 2">
+<div class="label">Mode</div>
+<div class="controls">
+<button id="modeAuto" class="mode-btn active-auto">AUTO</button>
+<button id="modeManual" class="mode-btn active-manual">MANUAL</button>
+</div>
+</div>
+
+<div class="card" id="ctrlModeCard" style="grid-column:span 2">
+<div class="label">Control Mode</div>
+<div class="controls">
+<button id="modePid" class="active-pid">PID</button>
+<button id="modeLinear" class="">Linear</button>
+</div>
+</div>
+
+<div class="card" id="spCard" style="grid-column:1/-1">
 <div class="label">Target Temperature</div>
 <div class="controls">
 <button id="spDown">&minus;</button>
+<input type="range" id="spSlider" class="sp-slider" min="20" max="30" step="0.5" value="24">
 <span class="value setpoint-color"><span id="setpoint">24.0</span><span class="unit">&deg;C</span></span>
 <button id="spUp">+</button>
 </div>
-<div class="bar"><div class="bar-fill setpoint-bar" id="spBar" style="width:50%"></div></div>
 </div>
 
-<div class="card" style="grid-column:1/-1">
-<div class="label">Mode</div>
-<div class="controls">
-<button id="modeAuto" class="active-auto">AUTO</button>
-    <button id="modeManual" class="active-manual">MANUAL</button>
-  </div>
-  <div class="controls" id="autoModeToggle">
-    <button id="modePid" class="active-pid">PID</button>
-    <button id="modeLinear" class="">Linear</button>
-  </div>
-</div>
-
-<div class="card" style="grid-column:1/-1">
+<div class="card" id="manualCard" style="grid-column:1/-1">
 <div class="label">Manual Speed</div>
 <div class="controls">
 <input type="range" id="pwmSlider" min="0" max="100" value="0">
@@ -114,6 +120,7 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 
 <script>
 var currentMode = 0;
+var currentAutoMode = 0;
 var sliderDragging = false;
 
 function updateDash(){
@@ -128,20 +135,25 @@ function updateDash(){
     if(d.m!==undefined){
       currentMode=d.m;
       var a=document.getElementById('modeAuto'),m=document.getElementById('modeManual');
-      if(d.m){a.className='active active-auto';m.className=''}else{a.className='';m.className='active active-manual'}
-      var tog=document.getElementById('autoModeToggle');
-      if(d.m){
-        tog.style.display='flex';
-        var pidBtn=document.getElementById('modePid'),linBtn=document.getElementById('modeLinear');
-        if(d.am!==undefined){
-          if(d.am){linBtn.className='active active-linear';pidBtn.className=''}
-          else{pidBtn.className='active active-pid';linBtn.className=''}
-        }
-      }else{tog.style.display='none'}
+      if(d.m){a.className='mode-btn active active-auto';m.className='mode-btn'}else{a.className='mode-btn';m.className='mode-btn active active-manual'}
     }
-    if(d.sp!==undefined){document.getElementById('setpoint').textContent=d.sp.toFixed(1);document.getElementById('spBar').style.width=((d.sp-20)/10*100)+'%'}
+    if(d.am!==undefined){
+      currentAutoMode=d.am;
+      var pidBtn=document.getElementById('modePid'),linBtn=document.getElementById('modeLinear');
+      if(d.am){linBtn.className='active active-linear';pidBtn.className=''}else{pidBtn.className='active active-pid';linBtn.className=''}
+    }
+    if(d.sp!==undefined){
+      document.getElementById('setpoint').textContent=d.sp.toFixed(1);
+      document.getElementById('spSlider').value=d.sp;
+    }
     if(d.mq!==undefined)document.getElementById('mqttDot').className=d.mq?'dot on':'dot off';
     if(!sliderDragging&&d.s!==undefined){document.getElementById('pwmSlider').value=d.s;document.getElementById('sliderVal').textContent=d.s+'%'}
+
+    var cc=document.getElementById('ctrlModeCard');
+    cc.className=currentMode?'card':'card greyed';
+    var sc=document.getElementById('spCard');
+    sc.className=(currentMode&&currentAutoMode===0)?'card':'card greyed';
+    document.getElementById('pwmSlider').disabled=currentMode?true:false;
   }).catch(function(){document.getElementById('wsDot').className='dot off'});
 }
 setInterval(updateDash,1000);
@@ -150,12 +162,18 @@ updateDash();
 document.getElementById('spDown').onclick=function(){
   var sp=parseFloat(document.getElementById('setpoint').textContent);
   sp=Math.max(20,sp-0.5);
+  document.getElementById('spSlider').value=sp;
   fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:'setpoint',v:sp})});
 };
 document.getElementById('spUp').onclick=function(){
   var sp=parseFloat(document.getElementById('setpoint').textContent);
   sp=Math.min(30,sp+0.5);
+  document.getElementById('spSlider').value=sp;
   fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:'setpoint',v:sp})});
+};
+document.getElementById('spSlider').onchange=function(){
+  var v=parseFloat(this.value);
+  fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:'setpoint',v:v})});
 };
 
 document.getElementById('modeAuto').onclick=function(){

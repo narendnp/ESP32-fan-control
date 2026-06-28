@@ -1,0 +1,9 @@
+.pio/
+__pycache__/
+*.pyc
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

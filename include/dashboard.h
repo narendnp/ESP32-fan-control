@@ -114,8 +114,6 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 </div>
 </div>
 
-</div>
-
 <div class="card" style="grid-column:1/-1">
 <div class="label">History (last 60s)</div>
 <canvas id="chartTemp" class="chart-canvas"></canvas>
@@ -218,8 +216,8 @@ function drawChart(id, data, yMin, yMax, color, lw, dash){
 function drawCharts(){
   drawChart('chartTemp',histTemp,0,50,'#f0883e',2);
   drawChart('chartHumid',histHumid,0,100,'#58a6ff',1.5);
-  drawChart('chartTargetRpm',histTargetRpm,0,6000,'#a371f7',1.5,[4,3]);
-  drawChart('chartActualRpm',histActualRpm,0,6000,'#3fb950',2);
+  drawChart('chartTargetRpm',histTargetRpm,0,10000,'#a371f7',1.5,[4,3]);
+  drawChart('chartActualRpm',histActualRpm,0,10000,'#3fb950',2);
 }
 
 document.getElementById('spDown').onclick=function(){

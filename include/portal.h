@@ -256,6 +256,7 @@ td:last-child{font-weight:500;word-break:break-all}
 .api-ref .method{display:inline-block;padding:2px 6px;border-radius:4px;font-size:.75rem;font-weight:600;margin-right:8px}
 .method.get{background:#1f6feb20;color:#58a6ff}
 .method.post{background:#23863620;color:#3fb950}
+.method.sub{background:#f0883e20;color:#f0883e}
 .api-ref .path{color:#e1e4e8}
 .api-ref .desc{display:block;color:#8b949e;font-size:.8rem;margin-top:4px;padding-left:52px}
 .form-group{margin-bottom:14px}
@@ -336,6 +337,21 @@ td:last-child{font-weight:500;word-break:break-all}
 <div>
 <button class="btn btn-primary" onclick="saveWifi()">Save &amp; Reconnect</button>
 <button class="btn btn-danger" onclick="forgetWifi()">Forget WiFi</button>
+</div>
+</div>
+
+<div class="card">
+<div class="label">MQTT Configuration</div>
+<table>
+<tr><td>Server</td><td>__MQTT_SERVER__:__MQTT_PORT__</td></tr>
+<tr><td>User</td><td>__MQTT_USER__</td></tr>
+<tr><td>Password</td><td>__MQTT_PASS__</td></tr>
+</table>
+<div style="margin-top:12px">
+<div class="label">Topics</div>
+<div class="api-ref" style="margin-bottom:4px"><span class="method post">PUB</span><span class="path">fan/telemetry</span><span class="desc">Sensor data published every 2 seconds</span></div>
+<div class="api-ref" style="margin-bottom:4px"><span class="method post">PUB</span><span class="path">fan/status</span><span class="desc">Online/offline status (retained)</span></div>
+<div class="api-ref"><span class="method sub">SUB</span><span class="path">fan/cmd</span><span class="desc">Incoming command messages</span></div>
 </div>
 </div>
 

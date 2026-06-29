@@ -486,7 +486,12 @@ void handleStatusPage() {
     server.send(200, "text/html", "<!DOCTYPE html><html><body style=\"background:#0f1117;color:#e1e4e8;font-family:sans-serif;padding:40px;text-align:center\"><h1 style=\"color:#58a6ff\">Access Denied</h1><p style=\"color:#8b949e\">Invalid or missing admin password.</p><p style=\"color:#8b949e;margin-top:12px\">Add <code>?pass=YOUR_PASSWORD</code> to the URL.</p></body></html>");
     return;
   }
-  server.send_P(200, "text/html", STATUS_HTML);
+  String html = String(reinterpret_cast<const __FlashStringHelper*>(STATUS_HTML));
+  html.replace("__MQTT_SERVER__", MQTT_SERVER);
+  html.replace("__MQTT_PORT__", String(MQTT_PORT));
+  html.replace("__MQTT_USER__", MQTT_USER);
+  html.replace("__MQTT_PASS__", MQTT_PASS);
+  server.send(200, "text/html", html);
 }
 
 void handlePortalScan() {

@@ -41,7 +41,7 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 .sp-slider::-webkit-slider-thumb{background:#58a6ff}
 .sp-slider::-moz-range-thumb{background:#58a6ff}
 .greyed{opacity:.4;pointer-events:none}
-.chart-canvas{display:block;width:100%;height:140px;margin-top:8px}
+.chart-canvas{display:block;width:100%;height:90px;margin-top:8px}
 .chart-legend{display:flex;gap:20px;margin:4px 0 8px 0;font-size:.75rem;color:#8b949e;justify-content:center}
 .legend-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
 .status{display:flex;gap:16px;font-size:.8rem;color:#8b949e;margin-top:16px;justify-content:center}
@@ -118,16 +118,14 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 
 <div class="card" style="grid-column:1/-1">
 <div class="label">History (last 60s)</div>
-<canvas id="chartTempHum" class="chart-canvas"></canvas>
-<div class="chart-legend">
-<span><span class="legend-dot temp"></span>Temp</span>
-<span><span class="legend-dot humid"></span>Humidity</span>
-</div>
-<canvas id="chartRpm" class="chart-canvas"></canvas>
-<div class="chart-legend">
-<span><span class="legend-dot" style="background:#a371f7"></span>Target RPM</span>
-<span><span class="legend-dot rpm"></span>Actual RPM</span>
-</div>
+<canvas id="chartTemp" class="chart-canvas"></canvas>
+<div class="chart-legend"><span><span class="legend-dot" style="background:#f0883e"></span>Temperature</span></div>
+<canvas id="chartHumid" class="chart-canvas"></canvas>
+<div class="chart-legend"><span><span class="legend-dot" style="background:#58a6ff"></span>Humidity</span></div>
+<canvas id="chartTargetRpm" class="chart-canvas"></canvas>
+<div class="chart-legend"><span><span class="legend-dot" style="background:#a371f7"></span>Target RPM</span></div>
+<canvas id="chartActualRpm" class="chart-canvas"></canvas>
+<div class="chart-legend"><span><span class="legend-dot" style="background:#3fb950"></span>Actual RPM</span></div>
 </div>
 
 <div class="status">
@@ -187,7 +185,7 @@ function updateDash(){
 setInterval(updateDash,1000);
 updateDash();
 
-function drawChart(id, datasets, yMin, yMax){
+function drawChart(id, data, yMin, yMax, color, lw, dash){
   var c=document.getElementById(id);
   var rect=c.getBoundingClientRect();
   if(rect.width<1||rect.height<1)return;
@@ -204,30 +202,24 @@ function drawChart(id, datasets, yMin, yMax){
   for(var i=0;i<=4;i++){var val=yMax-(yMax-yMin)*i/4;ctx.fillText(val.toFixed(0),pl-5,pt+ph*i/4)}
   ctx.textAlign='center';ctx.textBaseline='top';
   for(var i=0;i<=4;i++){var sec=MAX_HIST*i/4;ctx.fillText('-'+(MAX_HIST-sec).toFixed(0)+'s',pl+pw*i/4,h-pb+6)}
-  datasets.forEach(function(ds){
-    if(!ds.data||ds.data.length<2)return;
-    ctx.strokeStyle=ds.color;ctx.lineWidth=ds.w||2;ctx.setLineDash(ds.dash||[]);
-    ctx.beginPath();var started=false;
-    for(var i=0;i<ds.data.length;i++){
-      var x=pl+(i/(MAX_HIST-1))*pw;
-      if(ds.data[i]===null||ds.data[i]===undefined){started=false;continue}
-      var y=pt+ph-((ds.data[i]-yMin)/(yMax-yMin))*ph;
-      if(!started){ctx.moveTo(x,y);started=true}else ctx.lineTo(x,y)
-    }
-    ctx.stroke();
-  });
+  if(!data||data.length<2)return;
+  ctx.strokeStyle=color;ctx.lineWidth=lw||2;ctx.setLineDash(dash||[]);
+  ctx.beginPath();var started=false;
+  for(var i=0;i<data.length;i++){
+    var x=pl+(i/(MAX_HIST-1))*pw;
+    if(data[i]===null||data[i]===undefined){started=false;continue}
+    var y=pt+ph-((data[i]-yMin)/(yMax-yMin))*ph;
+    if(!started){ctx.moveTo(x,y);started=true}else ctx.lineTo(x,y)
+  }
+  ctx.stroke();
   ctx.setLineDash([]);
 }
 
 function drawCharts(){
-  drawChart('chartTempHum',[
-    {data:histTemp,color:'#f0883e',w:2},
-    {data:histHumid,color:'#58a6ff',w:1.5}
-  ],0,50);
-  drawChart('chartRpm',[
-    {data:histTargetRpm,color:'#a371f7',w:1.5,dash:[4,3]},
-    {data:histActualRpm,color:'#3fb950',w:2}
-  ],0,6000);
+  drawChart('chartTemp',histTemp,0,50,'#f0883e',2);
+  drawChart('chartHumid',histHumid,0,100,'#58a6ff',1.5);
+  drawChart('chartTargetRpm',histTargetRpm,0,6000,'#a371f7',1.5,[4,3]);
+  drawChart('chartActualRpm',histActualRpm,0,6000,'#3fb950',2);
 }
 
 document.getElementById('spDown').onclick=function(){

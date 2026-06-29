@@ -1,8 +1,8 @@
 # ESP32 PID Fan Controller
 
 A self-hosted ESP32-based fan controller that adjusts PWM fan speed based on
-DHT22 temperature readings. Features a PID controller with a web dashboard and
-MQTT telemetry — no cloud dependency.
+DHT22 temperature readings. Features a PID controller with a web dashboard,
+MQTT telemetry, and a captive portal WiFi manager — no cloud dependency.
 
 ---
 
@@ -22,6 +22,10 @@ MQTT telemetry — no cloud dependency.
   (last 60 seconds, Canvas 2D)
 - **Physical push button** to toggle MANUAL/AUTO mode
 - **LED indicator** — ON in MANUAL, OFF in AUTO
+- **WiFi Manager via captive portal** — softAP always on, DNS spoofing,
+  one-click network scan & connect at `/portal`
+- **Admin status page** — password-gated system info, sensor/fan/WiFi/MQTT
+  status, API reference, WiFi reconfiguration, restart with confirm dialog
 
 ---
 
@@ -64,7 +68,9 @@ MQTT telemetry — no cloud dependency.
  │DHT22 ├──────────►│  │ control │                     │
  └──────┘           │  │  loop   │   GPIO 26 ◄─────────│◄─── Tach ── Fan
                     │  │         │                     │
- ┌──────┐   GPIO 33 │  │ loop()  │   WiFi ────────────►│──── MQTT broker
+ ┌──────┐   GPIO 33 │   │  loop()  │   STA WiFi ────────►│──── MQTT broker
+                     │  │         │   AP WiFi ─────────►│──── Phone (captive portal)
+                     │  │         │   DNSServer :53 ───►│──── DNS spoof
  │  Pot ├──────────►│  │         │                     │       │
  └──────┘           │  │  ┌──────┤   WebServer :80 ───►│──── Browser
  ┌──────┐   GPIO 32 │  │  │ PID  │                     │       │
@@ -260,36 +266,79 @@ Parameters (defined at line 54):
 | Ki | 0.5 | Integral gain — how much past error accumulates |
 | Kd | 8.0 | Derivative gain — dampens response to rapid temperature changes |
 
-### WiFi Connection (lines 289–308)
+### AP+STA Mode (lines 149–156)
+
+The ESP32 runs in dual mode — softAP is always on for captive portal access,
+while STA connects to the user's home network:
+
+```cpp
+WiFi.mode(WIFI_AP_STA);
+WiFi.setHostname("esp32-fan");
+WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);      // "ESP32-Fan-A1NP" / "gantengonly420"
+dnsServer.start(53, "*", WiFi.softAPIP());     // catch all DNS → AP IP
+```
+
+- **AP:** SSID `ESP32-Fan-A1NP`, password `gantengonly420`. Always available.
+- **DNSServer:** Resolves every domain to `192.168.4.1` so phones see the
+  captive portal page when they connect to the AP.
+- **STA:** Connects to the user's WiFi using NVS-stored credentials (or
+  `secrets.h` fallback).
+
+### WiFi Credential Priority
+
+The device checks credentials in this order:
+
+1. **NVS (Preferences)** — SSID/password saved via the captive portal or
+   status page. Survives reboots.
+2. **`secrets.h`** — Compile-time fallback in `include/secrets.h`.
+3. **Offline** — If neither is available, STA stays disconnected. The AP and
+   dashboard still work.
+
+Helper functions (file bottom) manage NVS storage:
+
+```cpp
+String getSavedSSID() {
+  preferences.begin("wifi", true);
+  String val = preferences.getString("ssid", "");
+  preferences.end();
+  return val;
+}
+void saveCredentials(const String& ssid, const String& pass) { ... }
+void clearCredentials() { ... }
+```
+
+### STA Connection (lines 289–315)
 
 ```cpp
 void connectWiFi() {
   lastWifiAttempt = millis();
   wifiConnected = false;
+  String ssid = getSavedSSID();
+  String pass = getSavedPass();
+  if (ssid.length() == 0) {
+    ssid = WIFI_SSID;
+    pass = WIFI_PASS;
+  }
+  if (ssid.length() == 0 || ssid == "your_ssid") {
+    Serial.println("No valid WiFi credentials (offline mode)");
+    return;
+  }
   Serial.print("Connecting to WiFi");
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(ssid.c_str(), pass.c_str());
   int timeout = 100;   // 10 seconds
   while (WiFi.status() != WL_CONNECTED && timeout > 0) {
     delay(100);
     Serial.print(".");
     timeout--;
   }
-  if (WiFi.status() == WL_CONNECTED) {
-    wifiConnected = true;
-    Serial.print(" OK (");
-    Serial.print(WiFi.localIP());
-    Serial.println(")");
-  } else {
-    Serial.println(" FAILED (offline mode)");
-  }
+  // ...
 }
 ```
 
 - Blocking call with 10-second timeout. If WiFi fails, the device continues in
   **offline mode** — the fan still works, the dashboard is still served over
   the local network (once WiFi connects), but MQTT is unavailable.
-- Retries every 30 seconds in `loop()` (line 168): `if (millis() -
-  lastWifiAttempt > 30000)`
+- Retries every 30 seconds in `loop()`.
 - The `wifiConnected` flag triggers a one-time IP address print on successful
   connect.
 
@@ -323,18 +372,32 @@ void publishTelemetry() {
 
 ### Web Server (lines 362–374)
 
-Three routes are registered in `setup()`:
-
-| Route | Method | Handler | Description |
-|---|---|---|---|
-| `/` | GET | `handleRoot` | Serves dashboard HTML from PROGMEM |
-| `/api/status` | GET | `handleStatus` | Returns JSON with all current values |
-| `/api/cmd` | POST | `handleCommand` | Accepts JSON command, returns `{"ok":1}` |
-
 The web server uses the built-in `WebServer.h` library (part of the ESP32
 Arduino Core). No external dependencies. HTTP polling is used instead of
 WebSockets because `ESPAsyncWebServer` is incompatible with the lwIP stack
 in ESP32 Core 3.x.
+
+All routes registered in `setup()`:
+
+| Route | Method | Handler | Auth | Description |
+|---|---|---|---|---|
+| `/` | GET | `handleRoot` | — | Dashboard HTML from PROGMEM |
+| `/api/status` | GET | `handleStatus` | — | JSON with all current values |
+| `/api/cmd` | POST | `handleCommand` | — | Accepts JSON command, returns `{"ok":1}` |
+| `/portal` | GET | `handlePortal` | — | Captive portal page (scan + connect WiFi) |
+| `/status` | GET | `handleStatusPage` | `?pass=` | Admin status page (system info, config, restart) |
+| `/api/portal/scan` | POST | `handlePortalScan` | — | Scan WiFi networks, return JSON list |
+| `/api/portal/connect` | POST | `handlePortalConnect` | — | Save credentials + connect to network |
+| `/api/portal/status` | GET | `handlePortalStatus` | — | Current STA connection status |
+| `/api/wifi/status` | GET | `handleWifiStatus` | `?pass=` | Full WiFi status with saved SSID |
+| `/api/wifi/save` | POST | `handleWifiSave` | adminPass | Save new credentials + reconnect |
+| `/api/wifi/forget` | POST | `handleWifiForget` | adminPass | Clear NVS credentials, disable STA |
+| `/api/system/restart` | POST | `handleSystemRestart` | adminPass | Restart ESP32 with `ESP.restart()` |
+
+**Captive portal flow:** `onNotFound` catches any unregistered route (e.g.
+`http://captive.apple.com/hotspot-detect.html`) and issues a 302 redirect to
+`/portal`. Combined with DNSServer, this provides a complete captive portal
+experience.
 
 ### Command Processing (lines 376–424)
 
@@ -377,7 +440,9 @@ Returned by `GET /api/status` and published to `fan/telemetry`:
   "mq": 1,        // MQTT connected: 0 or 1
   "sp": 24.0,     // Setpoint (°C)
   "pid": 127,     // Raw PID output
-  "am": 0         // Auto sub-mode: 0=PID, 1=Linear
+  "am": 0,        // Auto sub-mode: 0=PID, 1=Linear
+  "ut": 3600,     // Uptime (seconds since boot)
+  "fh": 472000    // Free heap (bytes)
 }
 ```
 
@@ -524,6 +589,82 @@ Each chart has:
 
 ---
 
+## Captive Portal (`include/portal.h`, `src/main.cpp`)
+
+The ESP32 provides a complete captive portal experience for first-time WiFi
+setup. It is served both via DNS spoofing (when a phone connects to the AP)
+and directly at `/portal`.
+
+### DNS & Redirect Setup (lines 148–156)
+
+```cpp
+WiFi.mode(WIFI_AP_STA);
+WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
+dnsServer.start(53, "*", apIP);
+// ...
+server.onNotFound([]() {
+  server.sendHeader("Location", "/portal", true);
+  server.send(302, "text/plain", "");
+});
+```
+
+When a client connects to the AP and tries to visit any website:
+1. DNS lookup hits the ESP32's DNSServer → resolves to `192.168.4.1`
+2. HTTP request arrives at the ESP32 → `onNotFound` catches it
+3. 302 redirect to `http://192.168.4.1/portal`
+4. Phone browser displays the captive portal page
+
+### Portal Page (`GET /portal`)
+
+The portal HTML (`PORTAL_HTML`) is served from PROGMEM. It provides:
+
+- **Auto-scan** — On page load, calls `POST /api/portal/scan` to list nearby
+  networks with signal strength bars and lock icons.
+- **Select & Connect** — User taps a network, enters password (if secured),
+  clicks Connect. JS sends `POST /api/portal/connect` with `{ssid, pass}`.
+- **Poll & Redirect** — Polls `GET /api/portal/status` every 1s. On success,
+  shows the ESP's LAN IP and redirects to `http://google.com` (triggers captive
+  portal completion on iOS/Android).
+
+### Portal API Endpoints
+
+| Route | Method | Description |
+|---|---|---|
+| `/api/portal/scan` | POST | Scan WiFi networks, return JSON `{networks: [{ssid, rssi, secured}]}` |
+| `/api/portal/connect` | POST | Save credentials to NVS, begin STA connect `{ssid, pass}` |
+| `/api/portal/status` | GET | Return `{connected, ssid, ip}` for portal polling |
+
+### Admin Status Page (`GET /status?pass=...`)
+
+The status page (`STATUS_HTML`) provides a comprehensive system overview gated
+behind `WIFI_ADMIN_PASS`:
+
+- **Uptime card** — Formatted uptime (e.g. `2d 03h 15m 42s`)
+- **Status cards** — WiFi, MQTT, DHT22, Fan mode with colored dots
+- **WiFi Details** — STA SSID/IP/signal, saved SSID, AP credentials, free heap
+- **Sensor & Fan** — Temperature, humidity, speed, RPM, setpoint, PID output
+- **MQTT Configuration** — Server, port, user, password (from `secrets.h`),
+  and a topic reference (PUB `fan/telemetry`, PUB `fan/status`, SUB `fan/cmd`)
+- **WiFi Configuration** — SSID/password form with Save & Reconnect and
+  Forget WiFi buttons (both admin-gated)
+- **Restart Button** — Large red button with JS `confirm()` dialog before
+  `POST /api/system/restart`
+- **API Reference** — Complete list of all endpoints with methods
+
+The page fetches data from `/api/status` (every 3s) and `/api/wifi/status`
+(every 5s) and updates all sections dynamically.
+
+### Admin API Endpoints
+
+| Route | Method | Auth | Description |
+|---|---|---|---|
+| `/api/wifi/status` | GET | `?pass=` | Full WiFi status + saved SSID + signal |
+| `/api/wifi/save` | POST | `adminPass` in body | Save new credentials & reconnect |
+| `/api/wifi/forget` | POST | `adminPass` in body | Clear NVS, disable STA |
+| `/api/system/restart` | POST | `adminPass` in body | `ESP.restart()` after 500ms delay |
+
+---
+
 ## MQTT Protocol Reference
 
 ### Publish Topics
@@ -564,8 +705,12 @@ credentials:
 ```cpp
 #pragma once
 
-const char* WIFI_SSID = "your_ssid";
-const char* WIFI_PASS = "your_password";
+const char* WIFI_SSID = "your_ssid";          // STA fallback SSID
+const char* WIFI_PASS = "your_password";      // STA fallback password
+
+const char* WIFI_AP_SSID = "ESP32-Fan-A1NP";  // SoftAP SSID (always on)
+const char* WIFI_AP_PASS = "gantengonly420";  // SoftAP password
+const char* WIFI_ADMIN_PASS = "gantengonly420"; // /status page password
 
 const char* MQTT_SERVER = "192.168.1.100";
 const int   MQTT_PORT = 1883;
@@ -573,7 +718,11 @@ const char* MQTT_USER = "your_user";
 const char* MQTT_PASS = "your_password";
 ```
 
-`secrets.h` is listed in `.gitignore` and will not be committed.
+- `WIFI_SSID`/`WIFI_PASS` are only used if no credentials are saved in NVS.
+- `WIFI_AP_SSID`/`WIFI_AP_PASS` are the always-on softAP credentials.
+- `WIFI_ADMIN_PASS` gates the `/status` admin page and all privileged API
+  endpoints (wifi save/forget, system restart).
+- `secrets.h` is listed in `.gitignore` and will not be committed.
 
 ### `platformio.ini`
 
@@ -664,9 +813,20 @@ main ── v1: Pot-controlled PWM fan with DHT22 read + auto/manual toggle
           - 4 Canvas 2D charts, 60s rolling window
           - DPR-aware rendering
           - Chart card placement and styling fixes
+  │
+  v2.3: WiFi Manager captive portal + admin status page
+          - AP+STA mode with always-on softAP (ESP32-Fan-A1NP)
+          - DNSServer for captive portal DNS spoofing
+          - /portal page: scan networks, select SSID, connect
+          - Preferences (NVS) for WiFi credential storage
+          - /status page: system info, WiFi/MQTT/sensor status,
+            API reference, WiFi reconfig, restart with confirm
+          - 10 new HTTP routes for portal, wifi, and system mgmt
+          - onNotFound → 302 redirect to /portal
+          - MQTT Configuration card showing server details + topics
 ```
 
-Current active branch: `v2.2`.
+Current active branch: `v2.3`.
 
 ---
 
@@ -681,32 +841,35 @@ the end):
 2. **MQTT loop** (line 183) — If WiFi is connected, pump the MQTT client.
    If MQTT disconnected, attempt reconnect.
 
-3. **HTTP server** (line 186) — `server.handleClient()` processes one pending
-   HTTP request (dashboard page, status poll, or command POST).
+ 3. **DNS server** — `dnsServer.processNextRequest()` resolves captive portal
+    DNS lookups (any domain → AP IP 192.168.4.1).
 
-4. **Button debounce** (lines 188–196) — Read GPIO 32. If falling edge
+ 4. **HTTP server** — `server.handleClient()` processes one pending
+    HTTP request (dashboard page, status poll, portal/status page, or command POST).
+
+ 5. **Button debounce** (lines 188–196) — Read GPIO 32. If falling edge
    detected and >50ms since last press, toggle `fanMode`.
 
-5. **Set LED** (line 198) — Reflect current mode on GPIO 25.
+ 6. **Set LED** (line 198) — Reflect current mode on GPIO 25.
 
-6. **Read DHT22** (lines 200–202) — Read temperature and humidity. Check for
+ 7. **Read DHT22** (lines 200–202) — Read temperature and humidity. Check for
    `isnan()` (sensor error).
 
-7. **Read potentiometer** (line 205) — `analogRead(GPIO 33)` returns 0–4095.
+ 8. **Read potentiometer** (line 205) — `analogRead(GPIO 33)` returns 0–4095.
 
-8. **Compute fan speed** (lines 207–236):
+ 9. **Compute fan speed** (lines 207–236):
    - AUTO: If DHT valid, run PID or linear calculation. Apply 20/30°C bounds.
    - MANUAL: Use `manualPWMOverride` (if set by dashboard slider) or map pot
      value. Apply hysteresis to release override.
 
-9. **Write PWM** (line 238) — `ledcWrite(PWM_PIN, fanSpeed)`.
+ 10. **Write PWM** (line 238) — `ledcWrite(PWM_PIN, fanSpeed)`.
 
-10. **Tachometer sample** (lines 243–279) — Every 1000 ms, calculate RPM,
+ 11. **Tachometer sample** (lines 243–279) — Every 1000 ms, calculate RPM,
     print serial status line, reset pulse counter.
 
-11. **MQTT publish** (lines 281–284) — Every 2000 ms, publish telemetry JSON
+ 12. **MQTT publish** (lines 281–284) — Every 2000 ms, publish telemetry JSON
     to `fan/telemetry`.
 
-12. **Delay** (line 286) — `delay(50)` yields to the RTOS scheduler.
+ 13. **Delay** (line 286) — `delay(50)` yields to the RTOS scheduler.
 
 Total loop iteration time: ~50–55 ms (dominated by `delay(50)`).

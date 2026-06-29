@@ -1,0 +1,110 @@
+# ESP32 PID Fan Controller
+
+A self-hosted ESP32 firmware that adjusts PWM fan speed based on DHT22 temperature readings. Features a PID controller, web dashboard, MQTT telemetry, and a captive portal WiFi manager — no cloud dependency.
+
+## Features
+
+- **DHT22** temperature & humidity sensing
+- **25 kHz PWM** fan control (4-pin computer fan standard)
+- **Tachometer** RPM measurement with interrupt debounce
+- **Two modes:** MANUAL (potentiometer or dashboard slider) and AUTO (PID or Linear ramp-up)
+- **Manual PID** controller with anti-windup, no external library
+- **Web dashboard** served from the ESP32 — HTTP polling, 4-column grid, history charts (60s Canvas 2D)
+- **MQTT** publishes telemetry every 2s, subscribes to remote commands
+- **Captive portal** WiFi manager — softAP always on, DNS spoofing, one-click network scan & connect
+- **Admin status page** — password-gated system info, sensor/fan/WiFi/MQTT status, WiFi reconfiguration, restart with confirm
+- **Physical button** to toggle MANUAL/AUTO, **LED indicator**
+
+## Quick Start
+
+### Hardware Setup
+
+| GPIO | Connection |
+|------|-----------|
+| 14 | DHT22 DATA (4.7kΩ pull-up) |
+| 25 | LED anode (via 220Ω) |
+| 26 | Fan tachometer output (INPUT_PULLUP) |
+| 27 | Fan PWM input (25 kHz) |
+| 32 | Push button (to GND, INPUT_PULLUP) |
+| 33 | Potentiometer wiper (0–4095) |
+
+### Build & Flash
+
+1. Install [PlatformIO](https://platformio.org/)
+2. Copy `include/secrets.h.example` → `include/secrets.h`
+3. Fill in your WiFi and MQTT credentials
+4. Connect the ESP32 via USB
+5. Run:
+
+```
+pio run -t upload
+pio device monitor
+```
+
+### First Boot
+
+The ESP32 creates a WiFi AP named **ESP32-Fan-A1NP** (password: `gantengonly420`). Connect your phone to this network — the captive portal page will appear automatically. Select your home WiFi and enter the password. The ESP32 saves the credentials and connects.
+
+Once on your network, open `http://<esp-ip>/` for the dashboard, or `http://<esp-ip>/status?pass=gantengonly420` for the admin page.
+
+## Dashboard
+
+| Route | Description |
+|-------|------------|
+| `/` | Fan control dashboard (temp, humidity, speed, RPM, charts, controls) |
+| `/status?pass=...` | Admin status page (system info, WiFi/MQTT config, restart) |
+| `/portal` | Captive portal WiFi setup page |
+
+### API
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/api/status` | — | JSON telemetry (temp, humidity, PWM, RPM, mode, etc.) |
+| POST | `/api/cmd` | — | Send commands (`mode_auto`, `mode_manual`, `pwm`, `setpoint`, `automode`) |
+| POST | `/api/portal/scan` | — | Scan WiFi networks |
+| POST | `/api/portal/connect` | — | Save credentials & connect |
+| GET | `/api/portal/status` | — | STA connection status |
+| GET | `/api/wifi/status` | `?pass=` | WiFi details + saved SSID |
+| POST | `/api/wifi/save` | adminPass | Save new WiFi credentials |
+| POST | `/api/wifi/forget` | adminPass | Clear saved credentials |
+| POST | `/api/system/restart` | adminPass | Restart ESP32 |
+
+## Configuration
+
+Edit `include/secrets.h`:
+
+```cpp
+const char* WIFI_SSID = "...";          // STA fallback SSID
+const char* WIFI_PASS = "...";          // STA fallback password
+const char* WIFI_AP_SSID = "ESP32-Fan-A1NP";
+const char* WIFI_AP_PASS = "gantengonly420";
+const char* WIFI_ADMIN_PASS = "gantengonly420";
+const char* MQTT_SERVER = "192.168.1.x";
+const int   MQTT_PORT = 1883;
+const char* MQTT_USER = "...";
+const char* MQTT_PASS = "...";
+```
+
+## MQTT Topics
+
+| Topic | Direction | Description |
+|-------|-----------|-------------|
+| `fan/telemetry` | PUB (2s) | Sensor & status JSON |
+| `fan/status` | PUB (retained) | Online/offline |
+| `fan/cmd` | SUB | Remote commands |
+
+## Branches
+
+```
+main ── v1 ── v2 ── v2.1 ── v2.2 ── v2.3
+```
+
+- **v1:** Pot-controlled PWM + DHT22 + auto/manual toggle
+- **v2:** MQTT foundations (PubSubClient, ArduinoJson)
+- **v2.1:** Web dashboard, PID controller, full MQTT integration
+- **v2.2:** History charts (4 Canvas 2D, 60s rolling)
+- **v2.3:** WiFi Manager captive portal + admin status page
+
+## Documentation
+
+Full project documentation is available in [`docs/PROJECT.md`](docs/PROJECT.md).

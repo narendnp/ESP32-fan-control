@@ -6,6 +6,9 @@
 #include <WebServer.h>
 #include "secrets.h"
 #include "dashboard.h"
+#include "portal.h"
+#include <DNSServer.h>
+#include <Preferences.h>
 
 const int PWM_PIN = 27;
 const int TACH_PIN = 26;
@@ -110,6 +113,8 @@ PID pid(&pidInput, &pidOutput, &setpoint, Kp, Ki, Kd, 0);
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
 WebServer server(80);
+DNSServer dnsServer;
+Preferences preferences;
 
 unsigned long lastMqttTime = 0;
 const unsigned long MQTT_INTERVAL = 2000;
@@ -125,6 +130,20 @@ void handleCommand();
 void handleRoot();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 void processCommand(const char* json);
+String getSavedSSID();
+String getSavedPass();
+void saveCredentials(const String& ssid, const String& pass);
+void clearCredentials();
+void handlePortal();
+void handleStatusPage();
+void handlePortalScan();
+void handlePortalConnect();
+void handlePortalStatus();
+void handleWifiStatus();
+void handleWifiSave();
+void handleWifiForget();
+void handleSystemRestart();
+void handleNotFound();
 
 void setup() {
   Serial.begin(115200);
@@ -146,8 +165,15 @@ void setup() {
   pid.SetSampleTime(2000);
   pid.SetOutputLimits(0, 255);
 
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.setHostname("esp32-fan");
+  WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
+  IPAddress apIP = WiFi.softAPIP();
+  Serial.print("AP IP: ");
+  Serial.println(apIP);
+
+  dnsServer.start(53, "*", apIP);
+
   connectWiFi();
 
   mqtt.setServer(MQTT_SERVER, MQTT_PORT);
@@ -157,6 +183,16 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/cmd", HTTP_POST, handleCommand);
+  server.on("/portal", HTTP_GET, handlePortal);
+  server.on("/status", HTTP_GET, handleStatusPage);
+  server.on("/api/portal/scan", HTTP_POST, handlePortalScan);
+  server.on("/api/portal/connect", HTTP_POST, handlePortalConnect);
+  server.on("/api/portal/status", HTTP_GET, handlePortalStatus);
+  server.on("/api/wifi/status", HTTP_GET, handleWifiStatus);
+  server.on("/api/wifi/save", HTTP_POST, handleWifiSave);
+  server.on("/api/wifi/forget", HTTP_POST, handleWifiForget);
+  server.on("/api/system/restart", HTTP_POST, handleSystemRestart);
+  server.onNotFound(handleNotFound);
   server.begin();
 
   Serial.println("Fan controller ready!");
@@ -184,6 +220,7 @@ void loop() {
   }
 
   server.handleClient();
+  dnsServer.processNextRequest();
 
   bool btnState = digitalRead(BTN_PIN);
   if (btnState == LOW && lastBtnState == HIGH && millis() - lastDebounceTime > DEBOUNCE_DELAY) {
@@ -289,8 +326,22 @@ void loop() {
 void connectWiFi() {
   lastWifiAttempt = millis();
   wifiConnected = false;
+
+  String ssid = getSavedSSID();
+  String pass = getSavedPass();
+
+  if (ssid.length() == 0) {
+    ssid = WIFI_SSID;
+    pass = WIFI_PASS;
+  }
+
+  if (ssid.length() == 0 || ssid == "your_ssid") {
+    Serial.println("No valid WiFi credentials (offline mode)");
+    return;
+  }
+
   Serial.print("Connecting to WiFi");
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(ssid.c_str(), pass.c_str());
   int timeout = 100;
   while (WiFi.status() != WL_CONNECTED && timeout > 0) {
     delay(100);
@@ -353,6 +404,8 @@ String buildStatusJSON() {
   doc["sp"] = setpoint;
   doc["pid"] = (int)pidOutput;
   doc["am"] = (autoMode == LINEAR_MODE) ? 1 : 0;
+  doc["ut"] = millis() / 1000;
+  doc["fh"] = ESP.getFreeHeap();
 
   String json;
   serializeJson(doc, json);
@@ -421,4 +474,144 @@ void processCommand(const char* json) {
       Serial.println("Auto mode: Linear ramp-up");
     }
   }
+}
+
+void handlePortal() {
+  server.send_P(200, "text/html", PORTAL_HTML);
+}
+
+void handleStatusPage() {
+  String pass = server.arg("pass");
+  if (pass != WIFI_ADMIN_PASS) {
+    server.send(200, "text/html", "<!DOCTYPE html><html><body style=\"background:#0f1117;color:#e1e4e8;font-family:sans-serif;padding:40px;text-align:center\"><h1 style=\"color:#58a6ff\">Access Denied</h1><p style=\"color:#8b949e\">Invalid or missing admin password.</p><p style=\"color:#8b949e;margin-top:12px\">Add <code>?pass=YOUR_PASSWORD</code> to the URL.</p></body></html>");
+    return;
+  }
+  server.send_P(200, "text/html", STATUS_HTML);
+}
+
+void handlePortalScan() {
+  int n = WiFi.scanNetworks();
+  JsonDocument doc;
+  JsonArray nets = doc["networks"].to<JsonArray>();
+  for (int i = 0; i < n; i++) {
+    JsonObject net = nets.add<JsonObject>();
+    net["ssid"] = WiFi.SSID(i);
+    net["rssi"] = WiFi.RSSI(i);
+    net["secured"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN) ? 1 : 0;
+  }
+  WiFi.scanDelete();
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handlePortalConnect() {
+  String body = server.arg("plain");
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) { server.send(400, "application/json", "{\"ok\":0,\"message\":\"Invalid JSON\"}"); return; }
+  const char* ssid = doc["ssid"] | "";
+  const char* pass = doc["pass"] | "";
+  if (strlen(ssid) == 0) { server.send(400, "application/json", "{\"ok\":0,\"message\":\"SSID required\"}"); return; }
+  saveCredentials(ssid, pass);
+  WiFi.disconnect();
+  WiFi.begin(ssid, pass);
+  server.send(200, "application/json", "{\"ok\":1,\"message\":\"Connecting...\"}");
+}
+
+void handlePortalStatus() {
+  JsonDocument doc;
+  doc["connected"] = (WiFi.status() == WL_CONNECTED) ? 1 : 0;
+  doc["ssid"] = WiFi.SSID();
+  doc["ip"] = WiFi.localIP().toString();
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleWifiStatus() {
+  String pass = server.arg("pass");
+  if (pass != WIFI_ADMIN_PASS) { server.send(403, "application/json", "{\"ok\":0}"); return; }
+  String savedSSID = getSavedSSID();
+  JsonDocument doc;
+  doc["connected"] = (WiFi.status() == WL_CONNECTED) ? 1 : 0;
+  doc["ssid"] = WiFi.SSID();
+  doc["ip"] = WiFi.localIP().toString();
+  doc["savedSsid"] = savedSSID;
+  doc["signal"] = WiFi.RSSI();
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleWifiSave() {
+  String body = server.arg("plain");
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) { server.send(400, "application/json", "{\"ok\":0}"); return; }
+  if (String(doc["adminPass"] | "") != WIFI_ADMIN_PASS) { server.send(403, "application/json", "{\"ok\":0}"); return; }
+  const char* ssid = doc["ssid"] | "";
+  const char* pass = doc["pass"] | "";
+  if (strlen(ssid) == 0) { server.send(400, "application/json", "{\"ok\":0}"); return; }
+  saveCredentials(ssid, pass);
+  WiFi.disconnect();
+  WiFi.begin(ssid, pass);
+  server.send(200, "application/json", "{\"ok\":1}");
+}
+
+void handleWifiForget() {
+  String body = server.arg("plain");
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) { server.send(400, "application/json", "{\"ok\":0}"); return; }
+  if (String(doc["adminPass"] | "") != WIFI_ADMIN_PASS) { server.send(403, "application/json", "{\"ok\":0}"); return; }
+  clearCredentials();
+  WiFi.disconnect();
+  server.send(200, "application/json", "{\"ok\":1}");
+}
+
+void handleSystemRestart() {
+  String body = server.arg("plain");
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) { server.send(400, "application/json", "{\"ok\":0}"); return; }
+  if (String(doc["adminPass"] | "") != WIFI_ADMIN_PASS) { server.send(403, "application/json", "{\"ok\":0}"); return; }
+  server.send(200, "application/json", "{\"ok\":1,\"message\":\"Restarting...\"}");
+  delay(500);
+  ESP.restart();
+}
+
+void handleNotFound() {
+  server.sendHeader("Location", "/portal", true);
+  server.send(302, "text/plain", "");
+}
+
+String getSavedSSID() {
+  preferences.begin("wifi", true);
+  String val = preferences.getString("ssid", "");
+  preferences.end();
+  return val;
+}
+
+String getSavedPass() {
+  preferences.begin("wifi", true);
+  String val = preferences.getString("pass", "");
+  preferences.end();
+  return val;
+}
+
+void saveCredentials(const String& ssid, const String& pass) {
+  preferences.begin("wifi", false);
+  preferences.putString("ssid", ssid);
+  preferences.putString("pass", pass);
+  preferences.end();
+  Serial.println("WiFi credentials saved to NVS");
+}
+
+void clearCredentials() {
+  preferences.begin("wifi", false);
+  preferences.remove("ssid");
+  preferences.remove("pass");
+  preferences.end();
+  Serial.println("WiFi credentials cleared from NVS");
 }

@@ -126,6 +126,8 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 <div class="chart-legend"><span><span class="legend-dot" style="background:#3fb950"></span>Actual RPM</span></div>
 </div>
 
+</div>
+
 <div class="status">
 <span><span class="dot" id="wsDot"></span>Dashboard</span>
 <span><span class="dot" id="mqttDot"></span>MQTT</span>

@@ -13,7 +13,19 @@ PWM fan controller with DHT22 temperature sensing, PID control, web dashboard, a
 - MQTT telemetry (publishes every 2s, subscribes to commands)
 - Physical button to toggle mode, LED indicator
 
-## Hardware
+## Requirements
+
+- ESP32 development board (I used a WROOM-32D)
+- DHT22 temperature & humidity sensor
+- 4-pin PWM fan
+- Push button
+- LED (with 220Ω resistor)
+- Potentiometer (10 kΩ)
+- Some jumper wires and a breadboard for prototyping
+
+[!NOTE] Depending on your setup, you might also need a Step-up/Down converter to power your fan if it requires a different voltage than the ESP32. On this project, I used an off-the-shelf 12V PWM PC fan and powered it with a standard 5V USB charger through an MT3608 step-down converter. The ESP32 was powered via USB from the same charger.
+
+## Wiring
 
 | GPIO | Connection |
 |------|-----------|
@@ -27,25 +39,14 @@ PWM fan controller with DHT22 temperature sensing, PID control, web dashboard, a
 ## Quick Start
 
 ```
-cp include/secrets.h.example include/secrets.h
 # edit secrets.h with your WiFi & MQTT credentials
+cp include/secrets.h.example include/secrets.h
+
+# build and upload firmware
 pio run -t upload
+
+# monitor serial output
 pio device monitor
 ```
 
-Open the dashboard at `http://<esp-ip>/`.
-
-## API
-
-| Route | Description |
-|-------|------------|
-| `GET /` | Dashboard HTML |
-| `GET /api/status` | JSON status (temp, humidity, PWM, RPM, mode) |
-| `POST /api/cmd` | Send command (`mode_auto`, `mode_manual`, `pwm`, `setpoint`, `automode`) |
-
-## Branches
-
-- `v1` — Pot + DHT22 + auto/manual
-- `v2` — MQTT added
-- `v2.1` — Web dashboard, PID controller
-- `v2.2` — History charts (current)
+Open the dashboard at `http://<esp-ip>/` (*Usually it's 192.168.1.32*).

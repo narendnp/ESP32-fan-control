@@ -41,6 +41,9 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 .sp-slider::-webkit-slider-thumb{background:#58a6ff}
 .sp-slider::-moz-range-thumb{background:#58a6ff}
 .greyed{opacity:.4;pointer-events:none}
+.chart-canvas{display:block;width:100%;height:140px;margin-top:8px}
+.chart-legend{display:flex;gap:20px;margin:4px 0 8px 0;font-size:.75rem;color:#8b949e;justify-content:center}
+.legend-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
 .status{display:flex;gap:16px;font-size:.8rem;color:#8b949e;margin-top:16px;justify-content:center}
 .status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
 .status .dot.on{background:#3fb950;box-shadow:0 0 6px #3fb95066}
@@ -113,6 +116,20 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 
 </div>
 
+<div class="card" style="grid-column:1/-1">
+<div class="label">History (last 60s)</div>
+<canvas id="chartTempHum" class="chart-canvas"></canvas>
+<div class="chart-legend">
+<span><span class="legend-dot temp"></span>Temp</span>
+<span><span class="legend-dot humid"></span>Humidity</span>
+</div>
+<canvas id="chartRpm" class="chart-canvas"></canvas>
+<div class="chart-legend">
+<span><span class="legend-dot" style="background:#a371f7"></span>Target RPM</span>
+<span><span class="legend-dot rpm"></span>Actual RPM</span>
+</div>
+</div>
+
 <div class="status">
 <span><span class="dot" id="wsDot"></span>Dashboard</span>
 <span><span class="dot" id="mqttDot"></span>MQTT</span>
@@ -122,6 +139,12 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 var currentMode = 0;
 var currentAutoMode = 0;
 var sliderDragging = false;
+var histTemp = [];
+var histHumid = [];
+var histTargetRpm = [];
+var histActualRpm = [];
+var histTime = [];
+const MAX_HIST = 60;
 
 function updateDash(){
   fetch('/api/status').then(function(r){return r.json()}).then(function(d){
@@ -154,10 +177,58 @@ function updateDash(){
     var sc=document.getElementById('spCard');
     sc.className=(currentMode&&currentAutoMode===0)?'card':'card greyed';
     document.getElementById('pwmSlider').disabled=currentMode?true:false;
+
+    if(d.t!==undefined&&d.t>=0){histTemp.push(d.t);histHumid.push(d.h)}else{histTemp.push(null);histHumid.push(null)}
+    if(d.r!==undefined){histActualRpm.push(d.r);histTargetRpm.push(d.s*50)}else{histActualRpm.push(null);histTargetRpm.push(null)}
+    while(histTemp.length>MAX_HIST){histTemp.shift();histHumid.shift();histTargetRpm.shift();histActualRpm.shift()}
+    drawCharts();
   }).catch(function(){document.getElementById('wsDot').className='dot off'});
 }
 setInterval(updateDash,1000);
 updateDash();
+
+function drawChart(id, datasets, yMin, yMax){
+  var c=document.getElementById(id);
+  var rect=c.getBoundingClientRect();
+  if(rect.width<1||rect.height<1)return;
+  var dpr=window.devicePixelRatio||1;
+  c.width=rect.width*dpr;c.height=rect.height*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+  var w=rect.width,h=rect.height,pt=10,pr=10,pb=22,pl=40;
+  var pw=w-pl-pr,ph=h-pt-pb;
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='#2d303a';ctx.lineWidth=1;
+  for(var i=0;i<=4;i++){var y=pt+ph*i/4;ctx.beginPath();ctx.moveTo(pl,y);ctx.lineTo(w-pr,y);ctx.stroke()}
+  ctx.fillStyle='#8b949e';ctx.font='10px monospace';ctx.textAlign='right';ctx.textBaseline='middle';
+  for(var i=0;i<=4;i++){var val=yMax-(yMax-yMin)*i/4;ctx.fillText(val.toFixed(0),pl-5,pt+ph*i/4)}
+  ctx.textAlign='center';ctx.textBaseline='top';
+  for(var i=0;i<=4;i++){var sec=MAX_HIST*i/4;ctx.fillText('-'+(MAX_HIST-sec).toFixed(0)+'s',pl+pw*i/4,h-pb+6)}
+  datasets.forEach(function(ds){
+    if(!ds.data||ds.data.length<2)return;
+    ctx.strokeStyle=ds.color;ctx.lineWidth=ds.w||2;ctx.setLineDash(ds.dash||[]);
+    ctx.beginPath();var started=false;
+    for(var i=0;i<ds.data.length;i++){
+      var x=pl+(i/(MAX_HIST-1))*pw;
+      if(ds.data[i]===null||ds.data[i]===undefined){started=false;continue}
+      var y=pt+ph-((ds.data[i]-yMin)/(yMax-yMin))*ph;
+      if(!started){ctx.moveTo(x,y);started=true}else ctx.lineTo(x,y)
+    }
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+}
+
+function drawCharts(){
+  drawChart('chartTempHum',[
+    {data:histTemp,color:'#f0883e',w:2},
+    {data:histHumid,color:'#58a6ff',w:1.5}
+  ],0,50);
+  drawChart('chartRpm',[
+    {data:histTargetRpm,color:'#a371f7',w:1.5,dash:[4,3]},
+    {data:histActualRpm,color:'#3fb950',w:2}
+  ],0,6000);
+}
 
 document.getElementById('spDown').onclick=function(){
   var sp=parseFloat(document.getElementById('setpoint').textContent);

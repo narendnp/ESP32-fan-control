@@ -44,7 +44,7 @@ input[type=range]:disabled::-moz-range-thumb{background:#555;cursor:default}
 .chart-canvas{display:block;width:100%;height:90px;margin-top:8px}
 .chart-legend{display:flex;gap:20px;margin:4px 0 8px 0;font-size:.75rem;color:#8b949e;justify-content:center}
 .legend-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
-.status{display:flex;gap:16px;font-size:.8rem;color:#8b949e;margin-top:16px;justify-content:center}
+.status{display:flex;gap:16px;font-size:.8rem;color:#8b949e;margin:16px auto 0 auto;justify-content:center;max-width:900px}
 .status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
 .status .dot.on{background:#3fb950;box-shadow:0 0 6px #3fb95066}
 .status .dot.off{background:#da3633}

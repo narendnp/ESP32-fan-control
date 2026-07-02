@@ -26,13 +26,13 @@ A self-hosted ESP32 firmware that adjusts PWM fan speed based on DHT22 temperatu
 | 26 | Fan tachometer output (INPUT_PULLUP) |
 | 27 | Fan PWM input (25 kHz) |
 | 32 | Push button (to GND, INPUT_PULLUP) |
-| 33 | Potentiometer wiper (0–4095) |
+| 33 | 10kΩ Potentiometer wiper (0–4095) |
 
 ### Build & Flash
 
 1. Install [PlatformIO](https://platformio.org/)
 2. Copy `include/secrets.h.example` → `include/secrets.h`
-3. Fill in your WiFi and MQTT credentials
+3. Fill in your credentials
 4. Connect the ESP32 via USB
 5. Run:
 
@@ -43,17 +43,19 @@ pio device monitor
 
 ### First Boot
 
-The ESP32 creates a WiFi AP named **ESP32-Fan-A1NP** (password: `gantengonly420`). Connect your phone to this network — the captive portal page will appear automatically. Select your home WiFi and enter the password. The ESP32 saves the credentials and connects.
+The ESP32 creates a WiFi AP named **ESP32-Fan-A1NP**. Connect your device to this network — the captive portal page will appear automatically. Select your home WiFi and enter the password. The ESP32 saves the credentials and connects.
 
-Once on your network, open `http://<esp-ip>/` for the dashboard, or `http://<esp-ip>/status?pass=gantengonly420` for the admin page.
+Once on the ESP is connected to your home network, open `http://<esp-ip>/` for the dashboard. This IP address should be visible on the serial monitor or in the captive portal after connecting to your network.
+
+[!NOTE] You can also access `http://192.168.4.1/status?pass=...` to view which IP address the ESP32 has obtained from your router. **Make sure to access this from the device that is connected to the softAP.**
 
 ## Dashboard
 
 | Route | Description |
 |-------|------------|
 | `/` | Fan control dashboard (temp, humidity, speed, RPM, charts, controls) |
-| `/status?pass=...` | Admin status page (system info, WiFi/MQTT config, restart) |
-| `/portal` | Captive portal WiFi setup page |
+| `/status?pass=...` | (From softAP) Admin status page  |
+| `/portal` | (From softAP) Captive portal WiFi setup page |
 
 ### API
 
@@ -76,13 +78,13 @@ Edit `include/secrets.h`:
 ```cpp
 const char* WIFI_SSID = "...";          // STA fallback SSID
 const char* WIFI_PASS = "...";          // STA fallback password
-const char* WIFI_AP_SSID = "ESP32-Fan-A1NP";
-const char* WIFI_AP_PASS = "gantengonly420";
-const char* WIFI_ADMIN_PASS = "gantengonly420";
-const char* MQTT_SERVER = "192.168.1.x";
-const int   MQTT_PORT = 1883;
-const char* MQTT_USER = "...";
-const char* MQTT_PASS = "...";
+const char* WIFI_AP_SSID = "...";       // SoftAP SSID
+const char* WIFI_AP_PASS = "...";       // SoftAP password
+const char* WIFI_ADMIN_PASS = "...";    // Admin pass, also used for /status?pass=... password
+const char* MQTT_SERVER = "...";        // MQTT broker address
+const int   MQTT_PORT = 1883;           // MQTT broker port (default 1883)
+const char* MQTT_USER = "...";          // MQTT username
+const char* MQTT_PASS = "...";          // MQTT password
 ```
 
 ## MQTT Topics

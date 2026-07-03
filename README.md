@@ -1,4 +1,4 @@
-# ESP32 PID Fan Controller
+# ESP32 PWM Fan Controller
 
 A self-hosted ESP32 firmware that adjusts PWM fan speed based on DHT22 temperature readings. Features a PID controller, web dashboard, MQTT telemetry, and a captive portal WiFi manager — no cloud dependency.
 
@@ -17,6 +17,9 @@ A self-hosted ESP32 firmware that adjusts PWM fan speed based on DHT22 temperatu
 
 ## Quick Start
 
+### Example Wirings
+[![Wiring Diagram](assets/circuit_image.png)](assets/circuit_image.png)
+
 ### Hardware Setup
 
 | GPIO | Connection |
@@ -28,6 +31,9 @@ A self-hosted ESP32 firmware that adjusts PWM fan speed based on DHT22 temperatu
 | 32 | Push button (to GND, INPUT_PULLUP) |
 | 33 | 10kΩ Potentiometer wiper (0–4095) |
 
+> [!NOTE]
+> Depending on your setup, you might also need a Step-up/Down converter to power your fan if it requires a different voltage than the ESP32. On this project, I used an off-the-shelf 12V PWM PC fan and powered it with a standard 5V USB charger through an **MT3608 step-down converter**.
+
 ### Build & Flash
 
 1. Install [PlatformIO](https://platformio.org/)
@@ -36,18 +42,19 @@ A self-hosted ESP32 firmware that adjusts PWM fan speed based on DHT22 temperatu
 4. Connect the ESP32 via USB
 5. Run:
 
-```
+```bash
 pio run -t upload
 pio device monitor
 ```
 
 ### First Boot
 
-The ESP32 creates a WiFi AP named **ESP32-Fan-A1NP**. Connect your device to this network — the captive portal page will appear automatically. Select your home WiFi and enter the password. The ESP32 saves the credentials and connects.
+The ESP32 creates a softAP network for you to connect your ESP32 to the home network. Connect your device to this network — the captive portal page will appear automatically. Select your home WiFi and enter the password. The ESP32 saves the credentials and connects.
 
-Once on the ESP is connected to your home network, open `http://<esp-ip>/` for the dashboard. This IP address should be visible on the serial monitor or in the captive portal after connecting to your network.
+Once the ESP32 is connected to your home network, open `http://<esp-ip>/` for the dashboard. This IP address should be visible on the serial monitor or in the captive portal after connecting to your network.
 
-[!NOTE] You can also access `http://192.168.4.1/status?pass=...` to view which IP address the ESP32 has obtained from your router. **Make sure to access this from the device that is connected to the softAP.**
+> [!NOTE]
+> You can also access the status page from the softAP's IP `http://192.168.4.1/status?pass=...` to view which IP address the ESP32 has obtained from your router. **Make sure to access this from the device that is connected to the softAP.**
 
 ## Dashboard
 

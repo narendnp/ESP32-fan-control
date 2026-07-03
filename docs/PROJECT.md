@@ -1,4 +1,4 @@
-# ESP32 PID Fan Controller
+# ESP32 PWM Fan Controller
 
 A self-hosted ESP32-based fan controller that adjusts PWM fan speed based on
 DHT22 temperature readings. Features a PID controller with a web dashboard,
@@ -68,13 +68,13 @@ MQTT telemetry, and a captive portal WiFi manager — no cloud dependency.
  │DHT22 ├──────────►│  │ control │                     │
  └──────┘           │  │  loop   │   GPIO 26 ◄─────────│◄─── Tach ── Fan
                     │  │         │                     │
- ┌──────┐   GPIO 33 │   │  loop()  │   STA WiFi ────────►│──── MQTT broker
-                     │  │         │   AP WiFi ─────────►│──── Phone (captive portal)
-                     │  │         │   DNSServer :53 ───►│──── DNS spoof
- │  Pot ├──────────►│  │         │                     │       │
+ ┌──────┐           │  │  loop() │   STA WiFi ────────►│──── MQTT broker
+ |      |   GPIO 33 │  │         │   AP WiFi ─────────►│──── Device (captive portal)
+ | Pot  ├──────────►│  │         │   DNSServer :53 ───►│──── DNS spoof
+ │      │           |  |         |                     │       │
  └──────┘           │  │  ┌──────┤   WebServer :80 ───►│──── Browser
  ┌──────┐   GPIO 32 │  │  │ PID  │                     │       │
- │  Btn ├──────────►│  │  │class │   GPIO 25 ─────────►│──── LED
+ │ Btn  ├──────────►│  │  │class │   GPIO 25 ─────────►│────  LED
  └──────┘           │  │  └──────┤                     │
                     │  └─────────┘                     │
                     └──────────────────────────────────┘
@@ -89,6 +89,9 @@ Three subsystems run concurrently in `loop()`:
    serial
 
 ---
+## Flowchart Diagram
+
+[![Flowchart](../assets/esp32fan-flowchart-fin.excalidraw.png)](../assets/esp32fan-flowchart-fin.excalidraw.png)
 
 ## Firmware Deep Dive (`src/main.cpp`)
 

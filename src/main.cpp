@@ -88,6 +88,7 @@ public:
     unsigned long now = millis();
     if (now - lastTime < sampleTime) return;
     double dt = (double)(now - lastTime) / 1000.0;
+    if (dt > sampleTime * 2 / 1000.0) dt = (double)sampleTime / 1000.0;
     lastTime = now;
 
     double error = *input - *setpoint;
@@ -102,8 +103,8 @@ public:
     lastError = error;
 
     double out = P + I + D;
-    if (out > outMax) { out = outMax; integral -= error * dt; }
-    if (out < outMin) { out = outMin; integral -= error * dt; }
+    if (out > outMax) { out = outMax; if (error > 0) integral -= error * dt; }
+    if (out < outMin) { out = outMin; if (error < 0) integral -= error * dt; }
     *output = out;
   }
 };

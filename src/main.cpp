@@ -148,6 +148,12 @@ void handleNotFound();
 void setup() {
   Serial.begin(115200);
   Serial.println("Fan Control with Tachometer Starting...");
+  Serial.print("Reset reason: ");
+  Serial.println(esp_reset_reason());
+  Serial.print("Free heap: ");
+  Serial.print(ESP.getFreeHeap());
+  Serial.print(" | Max alloc: ");
+  Serial.println(ESP.getMaxAllocHeap());
 
   dht.begin();
 
@@ -309,6 +315,11 @@ void loop() {
     } else {
       Serial.print(" | DHT: ERROR");
     }
+    Serial.print(" | Heap: ");
+    Serial.print(ESP.getFreeHeap());
+    Serial.print(" (max alloc ");
+    Serial.print(ESP.getMaxAllocHeap());
+    Serial.print(")");
     Serial.println();
 
     tachPulseCount = 0;

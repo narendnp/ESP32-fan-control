@@ -9,6 +9,8 @@
 #include "portal.h"
 #include <DNSServer.h>
 #include <Preferences.h>
+#include <LiquidCrystal_I2C.h>
+#include <time.h>
 
 const int PWM_PIN = 27;
 const int TACH_PIN = 26;
@@ -18,6 +20,9 @@ const int BTN_PIN = 32;
 const int LED_PIN = 25;
 #define DHT_TYPE DHT22
 DHT dht(DHT_PIN, DHT_TYPE);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+unsigned long lastLcdUpdate = 0;
+int lcdScreen = 0;
 
 enum FanMode { MANUAL, AUTO };
 FanMode fanMode = MANUAL;
@@ -145,6 +150,7 @@ void handleWifiSave();
 void handleWifiForget();
 void handleSystemRestart();
 void handleNotFound();
+void updateLCD(float temp, float humid, int fanSpeed);
 
 void setup() {
   Serial.begin(115200);
@@ -157,6 +163,15 @@ void setup() {
   Serial.println(ESP.getMaxAllocHeap());
 
   dht.begin();
+
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Fan Controller");
+  lcd.setCursor(0, 1);
+  lcd.print("Starting...");
+
 
   pinMode(BTN_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
@@ -183,6 +198,10 @@ void setup() {
 
   connectWiFi();
 
+  if (WiFi.status() == WL_CONNECTED) {
+    configTime(28800, 0, "pool.ntp.org", "time.nist.gov");
+  }
+
   mqtt.setServer(MQTT_SERVER, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
   mqtt.setKeepAlive(15);
@@ -204,6 +223,69 @@ void setup() {
 
   Serial.println("Fan controller ready!");
   Serial.println("Press button to toggle MANUAL/AUTO mode");
+}
+
+void updateLCD(float temp, float humid, int fanSpeed) {
+  unsigned long now = millis();
+  if (now - lastLcdUpdate < 3000) return;
+  lastLcdUpdate = now;
+
+  struct tm tm;
+  bool timeValid = getLocalTime(&tm, 2000);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+
+  switch (lcdScreen) {
+    case 0: {
+      if (timeValid) {
+        char buf[17];
+        snprintf(buf, sizeof(buf), "Date:%02d/%02d/%02d", tm.tm_mday, tm.tm_mon + 1, (tm.tm_year + 1900) % 100);
+        lcd.print(buf);
+        lcd.setCursor(0, 1);
+        snprintf(buf, sizeof(buf), "Time:%02d:%02d:%02d", tm.tm_hour, tm.tm_min, tm.tm_sec);
+        lcd.print(buf);
+      } else {
+        lcd.print("Date: --/--/--");
+        lcd.setCursor(0, 1);
+        lcd.print("Time: --:--:--");
+      }
+      break;
+    }
+    case 1: {
+      char line1[17], line2[17];
+      if (!isnan(temp) && !isnan(humid)) {
+        snprintf(line1, sizeof(line1), "T:%2.1fC   H:%2.0f%%", temp, humid);
+      } else {
+        snprintf(line1, sizeof(line1), "T:--.-C   H:--%%");
+      }
+      int spd = map(fanSpeed, 0, 255, 0, 100);
+      unsigned long rpm = (tachPulseCount * 60000) / (TACH_SAMPLE_TIME * 2);
+      snprintf(line2, sizeof(line2), "RPM:%-4lu SPD:%d%%", rpm, spd);
+      lcd.print(line1);
+      lcd.setCursor(0, 1);
+      lcd.print(line2);
+      break;
+    }
+    case 2: {
+      lcd.print("IP:");
+      if (WiFi.status() == WL_CONNECTED) {
+        lcd.print(WiFi.localIP().toString());
+      } else {
+        lcd.print("N/A");
+      }
+      lcd.setCursor(0, 1);
+      lcd.print("Mode:");
+      if (fanMode == AUTO) {
+        lcd.print(autoMode == PID_MODE ? "AUTO PID   " : "AUTO LINEAR");
+      } else {
+        lcd.print("MANUAL   ");
+      }
+      break;
+    }
+  }
+
+  lcdScreen = (lcdScreen + 1) % 3;
 }
 
 void loop() {
@@ -326,6 +408,8 @@ void loop() {
     tachPulseCount = 0;
     lastTachTime = currentTime;
   }
+
+  updateLCD(temp, humid, fanSpeed);
 
   if (currentTime - lastMqttTime >= MQTT_INTERVAL) {
     publishTelemetry();

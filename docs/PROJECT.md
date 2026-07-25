@@ -26,6 +26,8 @@ MQTT telemetry, and a captive portal WiFi manager — no cloud dependency.
   one-click network scan & connect at `/portal`
 - **Admin status page** — password-gated system info, sensor/fan/WiFi/MQTT
   status, API reference, WiFi reconfiguration, restart with confirm dialog
+- **16x2 I2C LCD display** — cycles between date/time (NTP synced),
+  temperature/humidity/RPM/speed, and IP/operating mode every 3 seconds
 
 ---
 
@@ -39,6 +41,7 @@ MQTT telemetry, and a captive portal WiFi manager — no cloud dependency.
 | 10 kΩ potentiometer | Manual speed control |
 | Push button (momentary, normally open) | Mode toggle |
 | LED + 220 Ω resistor | Mode indicator |
+| 16x2 I2C LCD (PCF8574 backpack) | Status display |
 | 10 kΩ resistor (optional) | Tachometer pull-up if fan lacks internal pull-up |
 
 ### Pin Mapping
@@ -46,6 +49,8 @@ MQTT telemetry, and a captive portal WiFi manager — no cloud dependency.
 | GPIO | Connected To | Notes |
 |---|---|---|
 | 14 | DHT22 DATA | Requires 4.7 kΩ pull-up to 3.3V |
+| 21 | I2C SDA (LCD) | Default I2C, no Wire.begin() needed |
+| 22 | I2C SCL (LCD) | Default I2C, no Wire.begin() needed |
 | 25 | LED anode (via resistor) | Active HIGH, ON = MANUAL |
 | 26 | Fan tachometer output | INPUT_PULLUP, FALLING edge interrupt |
 | 27 | Fan PWM input | 25 kHz, 8-bit resolution (0–255) |
@@ -97,7 +102,7 @@ Three subsystems run concurrently in `loop()`:
 
 ### Pin Definitions & Globals
 
-All pin assignments are constants at the top (lines 10–17):
+All pin assignments are constants at the top (lines 10–19):
 
 ```cpp
 const int PWM_PIN = 27;
@@ -106,6 +111,7 @@ const int POT_PIN = 33;
 const int DHT_PIN = 14;
 const int BTN_PIN = 32;
 const int LED_PIN = 25;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 ```
 
 Two enums control operating state:
@@ -460,6 +466,51 @@ digitalWrite(LED_PIN, fanMode == MANUAL ? HIGH : LOW);
 - **ON (HIGH)** — MANUAL mode (you are in direct control)
 - **OFF (LOW)** — AUTO mode (the controller runs the fan)
 
+### 16x2 I2C LCD Display
+
+A 16×2 character LCD with PCF8574 I2C backpack is connected at address `0x27`
+on the default I2C bus (GPIO 21 SDA, GPIO 22 SCL). It cycles through three
+screens every 3 seconds:
+
+| Screen | Line 1 | Line 2 |
+|--------|--------|--------|
+| 0 | `Date: DD/MM/YY` | `Time: HH:MM:SS` |
+| 1 | `T:XX.XC   H:XX%` | `RPM:XXXX SPD:XX%` |
+| 2 | `IP: x.x.x.x` | `Mode:AUTO PID   ` / `AUTO LINEAR` / `MANUAL   ` |
+
+**NTP time sync** — `configTime(28800, 0, "pool.ntp.org", "time.nist.gov")`
+is called once in `setup()` after WiFi connects. The LCD reads time via
+`getLocalTime()` with a 2000 ms timeout. If NTP hasn't synced yet, the screen
+shows `--/--/--` and `--:--:--` placeholders.
+
+```cpp
+void updateLCD(float temp, float humid, int fanSpeed) {
+  unsigned long now = millis();
+  if (now - lastLcdUpdate < 3000) return;
+  lastLcdUpdate = now;
+
+  struct tm tm;
+  bool timeValid = getLocalTime(&tm, 2000);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+
+  switch (lcdScreen) {
+    case 0:  // Date & Time
+    case 1:  // Temp, Humidity, RPM, Speed
+    case 2:  // IP & Mode
+  }
+
+  lcdScreen = (lcdScreen + 1) % 3;
+}
+```
+
+- Mode text is padded to 11 characters to clear leftover characters when
+  switching between modes (e.g. `AUTO LINEAR` → `AUTO PID   `).
+- `lcd.clear()` + `lcd.setCursor()` avoids flicker at the 3s interval.
+- The function is called every `loop()` iteration but only redraws when the
+  3-second gate fires.
+
 ### Button Debounce (lines 188–196)
 
 ```cpp
@@ -741,16 +792,17 @@ monitor_speed = 115200
 lib_deps =
     adafruit/Adafruit Unified Sensor@^1.1.15
     adafruit/DHT sensor library@^1.4.7
-    blynkkk/Blynk@^1.3.2
     gyverlibs/Tachometer@^1.3
     knolleary/PubSubClient@^2.8
     bblanchon/ArduinoJson@^7.2.2
+    marcoschwartz/LiquidCrystal_I2C@^1.1.4
 ```
 
 Note: `br3ttb/ArduinoPID` is intentionally omitted — the PID controller is
 implemented manually in `main.cpp`. The `gyverlibs/Tachometer` library is
 included but unused (the tachometer is also implemented manually); it can be
-removed to save flash space.
+removed to save flash space. `marcoschwartz/LiquidCrystal_I2C` drives the
+16x2 character LCD over I2C.
 
 ---
 
@@ -827,9 +879,16 @@ main ── v1: Pot-controlled PWM fan with DHT22 read + auto/manual toggle
           - 10 new HTTP routes for portal, wifi, and system mgmt
           - onNotFound → 302 redirect to /portal
           - MQTT Configuration card showing server details + topics
+  │
+  v2.4: 16x2 I2C LCD display with 3-screen cycle
+          - LCD on GPIO 21 (SDA) / 22 (SCL), address 0x27
+          - Screen 0: Date/time via NTP (GMT+8)
+          - Screen 1: Temperature, humidity, RPM, speed %
+          - Screen 2: IP address and operating mode
+          - 3-second auto-cycle between screens
 ```
 
-Current active branch: `v2.3`.
+Current active branch: `v2.4`.
 
 ---
 
@@ -868,11 +927,14 @@ the end):
  10. **Write PWM** (line 238) — `ledcWrite(PWM_PIN, fanSpeed)`.
 
  11. **Tachometer sample** (lines 243–279) — Every 1000 ms, calculate RPM,
-    print serial status line, reset pulse counter.
+     print serial status line, reset pulse counter.
 
- 12. **MQTT publish** (lines 281–284) — Every 2000 ms, publish telemetry JSON
-    to `fan/telemetry`.
+ 12. **LCD update** — Call `updateLCD()`. Only redraws if 3-second gate has
+     elapsed. Cycles through date/time, sensors, and IP/mode screens.
 
- 13. **Delay** (line 286) — `delay(50)` yields to the RTOS scheduler.
+ 13. **MQTT publish** (lines 281–284) — Every 2000 ms, publish telemetry JSON
+     to `fan/telemetry`.
+
+ 14. **Delay** (line 286) — `delay(50)` yields to the RTOS scheduler.
 
 Total loop iteration time: ~50–55 ms (dominated by `delay(50)`).

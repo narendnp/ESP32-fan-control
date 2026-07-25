@@ -13,6 +13,7 @@ A self-hosted ESP32 firmware that adjusts PWM fan speed based on DHT22 temperatu
 - **MQTT** publishes telemetry every 2s, subscribes to remote commands
 - **Captive portal** WiFi manager — softAP always on, DNS spoofing, one-click network scan & connect
 - **Admin status page** — password-gated system info, sensor/fan/WiFi/MQTT status, WiFi reconfiguration, restart with confirm
+- **16x2 I2C LCD** — cycles between date/time (NTP), temp/humidity/RPM/speed, and IP/mode every 3 seconds
 - **Physical button** to toggle MANUAL/AUTO, **LED indicator**
 
 ## Quick Start
@@ -25,6 +26,8 @@ A self-hosted ESP32 firmware that adjusts PWM fan speed based on DHT22 temperatu
 | GPIO | Connection |
 |------|-----------|
 | 14 | DHT22 DATA (4.7kΩ pull-up) |
+| 21 | I2C SDA (LCD) |
+| 22 | I2C SCL (LCD) |
 | 25 | LED anode (via 220Ω) |
 | 26 | Fan tachometer output (INPUT_PULLUP) |
 | 27 | Fan PWM input (25 kHz) |
@@ -105,7 +108,7 @@ const char* MQTT_PASS = "...";          // MQTT password
 ## Branches
 
 ```
-main ── v1 ── v2 ── v2.1 ── v2.2 ── v2.3
+main ── v1 ── v2 ── v2.1 ── v2.2 ── v2.3 ── v2.4
 ```
 
 - **v1:** Pot-controlled PWM + DHT22 + auto/manual toggle
@@ -113,6 +116,7 @@ main ── v1 ── v2 ── v2.1 ── v2.2 ── v2.3
 - **v2.1:** Web dashboard, PID controller, full MQTT integration
 - **v2.2:** History charts (4 Canvas 2D, 60s rolling)
 - **v2.3:** WiFi Manager captive portal + admin status page
+- **v2.4:** 16x2 I2C LCD display with 3-screen cycle
 
 ## Documentation
 
